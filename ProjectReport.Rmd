@@ -1,16 +1,18 @@
 ---
-title: "Untitled"
+title: "Tornadoes Cause The Most Harm to Economy, Public Health in the U.S."
 output:
   html_document:
-    toc: true
-    fig_caption: true
+    fig_caption: yes
+    toc: yes
 ---
 
 ## Synopsis
 
+In the last 61 years, tornadoes have killed or injured more than 95,000 Americans and have caused millions in damages to property and crops. 
+
 ## Data Processing
 
-```{r cache=TRUE}
+```{r cache=TRUE, message=FALSE}
 
 # checking if data directory exists, if not, creating one
 if(!file.exists("./data")) { dir.create("./data") }
@@ -22,14 +24,12 @@ fileURL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv
 fileName <- "data/repdata-data-StormData.csv.bz2"
 
 # downloading the file and placing it in the data directory if it doesn't already exist
-if(!file.exists(fileName) { download.file(fileURL, fileName, method="curl")}
+if(!file.exists("data/repdata-data-StormData.csv.bz2")) { 
+  download.file(fileURL, fileName, method="curl") 
+}
 
 # reading the data into R
 data <- read.csv(fileName)
-
-# let's use dplyr
-library(dplyr)
-data <- tbl_df(data)
 
 ```
 
@@ -41,17 +41,20 @@ Because many of the event types are inconsistently recorded (ex. THUNDERSTORM WI
 The first step is easy: transform the EVTYPE column to tolower(EVTYPE). The second involves a custom function that uses R's agrep function to locate matches and replace those with one standard name for an event.
 
 ```{r}
+# let's use dplyr
+library(dplyr)
+data <- tbl_df(data)
 
 # step 1: converting all EVTYPES to lower case
 tidydata <- data %>% 
-  mutate(EVTYPE = tolower(EVTYPE)) %>%
+  mutate(EVTYPE = tolower(EVTYPE)) %>% 
   mutate(EVTYPE = trimws(EVTYPE))
 
 # step 2: String matching with Levenshtein distance
-# max distance is bumped up to 0.3 to catch more
+# max distance is bumped up to 0.2 to catch more
 deduplicate <- function(x,l) {
   
-  matches <- agrep(x,l,max.distance = 0.3)
+  matches <- agrep(x,l,max.distance = 0.2)
   if(length(matches) > 1) {
     rep <- matches[1]
     l[matches] <- l[rep]
@@ -70,11 +73,13 @@ To answer this question we will look at Event Types that result in direct fatali
 
 ```{r}
 
+# summarizing event types by fatalities and injuries
 harmfulevents <- tidydata %>%
   group_by(EVTYPE) %>%
-  summarize(total = sum(FATALITIES,INJURIES)) %>%
-  arrange(desc(total))
-  
+  summarize(totalharm = sum(FATALITIES,INJURIES)) %>%
+  arrange(desc(totalharm))
+
+# deduplicate  
 harmfulevents$EVTYPE <- sapply(harmfulevents$EVTYPE,deduplicate,harmfulevents$EVTYPE)
 
 ```
@@ -83,20 +88,70 @@ There's one event in particular deduplicate is having a hard time fixing, "tstm 
 
 ```{r}
 
+# fixing thunderstorm entries
 harmfulevents$EVTYPE[harmfulevents$EVTYPE=="tstm wind"] <- "thunderstorm wind"
 
+# re-sort
 harmfulevents <- harmfulevents %>% 
   group_by(EVTYPE) %>%
-  summarize(total = sum(total)) %>%
-  arrange(desc(total))
+  summarize(totalharm = sum(totalharm)) %>%
+  arrange(desc(totalharm))
 
 ```
 
 Here are our top 5 events:
 
-```{r echo=FALSE}
-head(harmfulevents,5)
+```{r message=FALSE}
+
+topfive.harm <- head(harmfulevents,5)
+
+library(ggplot2)
+
+ggplot(topfive.harm) +
+  geom_bar(aes(x=reorder(EVTYPE,-totalharm),y=totalharm, fill=EVTYPE),stat="identity") +
+  xlab("Event Type") +
+  ylab("Total Fatalities and Injuries") +
+  ggtitle("Top Severe Weather Events With Total Fatalities and Injuries") +
+  theme(axis.text.x = element_text(angle=90,vjust=1))
+
 ```
 
 ### Which Events have the Greatest Economic Consequence?
 
+To answer this question we will look at Event Types that tallied up the most in PROPDMG and CROPDMG variables -- property damage and crop damage, respectively. According to the NOAA, the variables represent dollar amounts. I'll first summarize the observations by EVTYPE then run deduplicate on the data frame to clean up EVTYPE.
+
+```{r}
+
+# summarize by property and crop damage
+damagingevents <- tidydata %>% 
+  group_by(EVTYPE) %>%
+  summarize(totaldamage = sum(PROPDMG,CROPDMG)) %>%
+  arrange(desc(totaldamage))
+
+# deduplicate
+damagingevents$EVTYPE <- sapply(damagingevents$EVTYPE,deduplicate,damagingevents$EVTYPE)
+
+damagingevents$EVTYPE[damagingevents$EVTYPE=="tstm wind"] <- "thunderstorm wind"
+
+# re-sort
+damagingevents <- damagingevents %>% 
+  group_by(EVTYPE) %>%
+  summarize(totaldamage = sum(totaldamage)) %>%
+  arrange(desc(totaldamage))
+
+```
+
+Let's look at our top five events:
+
+```{r message=FALSE}
+
+topfive.econ <- head(damagingevents,5)
+
+ggplot(topfive.econ) +
+  geom_bar(aes(x=reorder(EVTYPE,-totaldamage),y=totaldamage, fill=EVTYPE),stat="identity") +
+  xlab("Event Type") +
+  ylab("Total in Economic Damage (Dollars)") +
+  ggtitle("Top Severe Weather Events With Total Economic Damage") +
+  theme(axis.text.x = element_text(angle=90,vjust=1))
+
+```
