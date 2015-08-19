@@ -37,5 +37,33 @@ data <- tbl_df(data)
 
 ### Which Events are Most Harmful to Population Health?
 
+To answer this question we will look at Event Types that result in direct fatalities or injuries. Because many of the event types are inconsistently recorded (ex. THUNDERSTORM WIND and THUNDERSTORM WINDS) I'm going to use two processes to clean up the data:
+
+* converting all events to lowercase, which removes capitalization errors
+* approximate string matching using the generalized Levenshtein distance.
+
+```{r}
+# data frame with event type, fatalities and injuries
+harmfulevents <- data %>% 
+  select(EVTYPE, FATALITIES, INJURIES) %>%
+  # all lower case to clean up some event types
+  mutate(EVTYPE = tolower(EVTYPE)) %>%
+  group_by(EVTYPE) %>%
+  summarize(total = sum(FATALITIES,INJURIES)) %>%
+  arrange(desc(total))
+
+```
+
+
+
+```{r}
+
+combineevents <- function(df) {
+}
+
+
+
+```
+
 ### Which Events have the Greatest Economic Consequence?
 
