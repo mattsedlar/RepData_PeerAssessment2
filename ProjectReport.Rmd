@@ -38,41 +38,65 @@ Because many of the event types are inconsistently recorded (ex. THUNDERSTORM WI
 * converting all events to lowercase, which removes capitalization errors
 * approximate string matching using the generalized Levenshtein distance.
 
+The first step is easy: transform the EVTYPE column to tolower(EVTYPE). The second involves a custom function that uses R's agrep function to locate matches and replace those with one standard name for an event.
+
 ```{r}
 
 # step 1: converting all EVTYPES to lower case
-tidydata <- data %>% mutate(EVTYPE = tolower(EVTYPE))
+tidydata <- data %>% 
+  mutate(EVTYPE = tolower(EVTYPE)) %>%
+  mutate(EVTYPE = trimws(EVTYPE))
 
 # step 2: String matching with Levenshtein distance
-
-```
-
-
-
-```{r}
-
-combineevents <- function(x,l) {
+# max distance is bumped up to 0.3 to catch more
+deduplicate <- function(x,l) {
   
-  for(i in l) {
-    matches <- agrep(x,l)
-    if(matches > 1) {
-      rep <- matches[1]      
-      for (x in matches)
-        replace(l[x],values=rep)
-    }  
+  matches <- agrep(x,l,max.distance = 0.3)
+  if(length(matches) > 1) {
+    rep <- matches[1]
+    l[matches] <- l[rep]
   }
-  l
-  }
-
-
-
+  else l[matches] <- l[matches]
+}
 ```
+
+Running the deduplicate function on a dataset with 902,297 observations would cause R to crash, so we'll save that for when we have narrowed down our observations.
 
 ## Results
 
 ### Which Events are Most Harmful to Population Health?
 
-To answer this question we will look at Event Types that result in direct fatalities or injuries.
+To answer this question we will look at Event Types that result in direct fatalities or injuries. Let's use dplyr to group by the Event Type and then sum the number of fatalities and injuries. We'll have duplicate events, so this is where the deduplicate function will come in handy.
+
+```{r}
+
+harmfulevents <- tidydata %>%
+  group_by(EVTYPE) %>%
+  summarize(total = sum(FATALITIES,INJURIES)) %>%
+  arrange(desc(total))
+  
+harmfulevents$EVTYPE <- sapply(harmfulevents$EVTYPE,deduplicate,harmfulevents$EVTYPE)
+
+```
+
+There's one event in particular deduplicate is having a hard time fixing, "tstm wind" vs. "thunderstorm wind". So I will fix those manually and then regroup and summarize.
+
+```{r}
+
+harmfulevents$EVTYPE[harmfulevents$EVTYPE=="tstm wind"] <- "thunderstorm wind"
+
+harmfulevents <- harmfulevents %>% 
+  group_by(EVTYPE) %>%
+  summarize(total = sum(total)) %>%
+  arrange(desc(total))
+
+```
+
+Here are our top 5 events:
+
+```{r echo=FALSE}
+head(harmfulevents,5)
+```
 
 ### Which Events have the Greatest Economic Consequence?
 
