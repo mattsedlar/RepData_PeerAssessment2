@@ -1,5 +1,6 @@
 ---
-title: "Tornadoes Cause The Most Harm to Economy, Public Health in the U.S."
+title: "Floods and Tornadoes Cause The Most Harm to Economy, Public Health in the U.S."
+author: "By Matthew Sedlar"
 output:
   html_document:
     fig_caption: yes
@@ -8,9 +9,11 @@ output:
 
 ## Synopsis
 
-In the last 61 years, tornadoes have killed or injured more than 95,000 Americans and have caused millions in damages to property and crops. 
+Between 1996 and 2011, tornadoes have killed or injured more than 20,000 Americans while floods have caused billions in damages to property and crops. That's my conclusion based on an analysis of data from the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This report contains an explanation of how the data was processed as well as the results.
 
 ## Data Processing
+
+This section details how the NOAA data was acquired and processed for analysis. I first check to see if the data directory and file don't already exist. If they don't, the script creates the directory then downloads the data. The data is read into an R object approriately called "data."
 
 ```{r cache=TRUE, message=FALSE}
 
@@ -33,19 +36,24 @@ data <- read.csv(fileName)
 
 ```
 
-Because many of the event types are inconsistently recorded (ex. THUNDERSTORM WIND and THUNDERSTORM WINDS) I'm going to use two processes to clean up the data:
+This report is mostly going to look at a column in the data labeled EVTYPE, or Event Type. Upon inspection, there are several issues with the entries in this column. Many of the event types are inconsistently recorded (ex. THUNDERSTORM WIND, TSTM WIND and THUNDERSTORM WINDS are entries). There are also capitalization issues. Some entries are all uppercase, and others are normal or lowercase.  
 
-* converting all events to lowercase, which removes capitalization errors
-* approximate string matching using the generalized Levenshtein distance.
+I'm going to use two processes to clean up the data:
+
+* convert all events to lowercase, which removes capitalization errors
+* approximate string matching using the generalized Levenshtein distance (see Appendix A).
 
 The first step is easy: transform the EVTYPE column to tolower(EVTYPE). The second involves a custom function that uses R's agrep function to locate matches and replace those with one standard name for an event.
 
-```{r}
+I'm going to make all these adjustments on a copy of the data object called "tidydata."
+
+```{r message=FALSE}
 # let's use dplyr
 library(dplyr)
 data <- tbl_df(data)
 
 # step 1: converting all EVTYPES to lower case
+# I will also trim the whitespace
 tidydata <- data %>% 
   mutate(EVTYPE = tolower(EVTYPE)) %>% 
   mutate(EVTYPE = trimws(EVTYPE))
@@ -65,11 +73,23 @@ deduplicate <- function(x,l) {
 
 Running the deduplicate function on a dataset with 902,297 observations would cause R to crash, so we'll save that for when we have narrowed down our observations.
 
+Lastly, according to [NOAA](https://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype), only tornadoes events were recorded from 1950-1954 and tornadoes, thunderstorm winds and hail from 1995-1995, so we're going to look at data from 1996-2011 to prevent results biased toward those events. To do that, let's convert the date columns in the data and subset by date.
+
+```{r cache=TRUE}
+
+tidydata <- tidydata %>% 
+  transform(BGN_DATE = as.Date(BGN_DATE, "%m/%d/%Y")) %>%
+  filter(BGN_DATE >= "1996-01-01")
+
+```
+
+Now we are ready to analyze the data. I will be looking specifically at which events are the most harmful to population health across the U.S. and which events have the greatest economic consequence across the U.S.
+
 ## Results
 
 ### Which Events are Most Harmful to Population Health?
 
-To answer this question we will look at Event Types that result in direct fatalities or injuries. Let's use dplyr to group by the Event Type and then sum the number of fatalities and injuries. We'll have duplicate events, so this is where the deduplicate function will come in handy.
+To answer this question we will look at Event Types that result in direct fatalities or injuries, variables stored in the NOAA data as -- you guessed it -- FATALITIES and INJURIES. Let's use dplyr to group by the Event Type and then sum the number of fatalities and injuries. We'll have duplicate events, so this is where the deduplicate function will come in handy.
 
 ```{r}
 
@@ -84,12 +104,15 @@ harmfulevents$EVTYPE <- sapply(harmfulevents$EVTYPE,deduplicate,harmfulevents$EV
 
 ```
 
-There's one event in particular deduplicate is having a hard time fixing, "tstm wind" vs. "thunderstorm wind". So I will fix those manually and then regroup and summarize.
+There are some events in particular deduplicate is having a hard time fixing, "excessive heat," "flood," "hurricane," and "thunderstorm wind." So I will fix those manually and then regroup and summarize.
 
 ```{r}
 
-# fixing thunderstorm entries
+# fixing heat, flood, hurricane, and thunderstorm entries
 harmfulevents$EVTYPE[harmfulevents$EVTYPE=="tstm wind"] <- "thunderstorm wind"
+harmfulevents[grep("heat",harmfulevents$EVTYPE),]$EVTYPE <- "excessive heat"
+harmfulevents[grep("flood",harmfulevents$EVTYPE),]$EVTYPE <- "flood"
+harmfulevents[grep("hurricane",harmfulevents$EVTYPE),]$EVTYPE <- "hurricane"
 
 # re-sort
 harmfulevents <- harmfulevents %>% 
@@ -116,14 +139,22 @@ ggplot(topfive.harm) +
 
 ```
 
+As you can see, tornadoes are clearly the most harmful events in terms of number of fatalities and injuries.
+
 ### Which Events have the Greatest Economic Consequence?
 
-To answer this question we will look at Event Types that tallied up the most in PROPDMG and CROPDMG variables -- property damage and crop damage, respectively. According to the NOAA, the variables represent dollar amounts. I'll first summarize the observations by EVTYPE then run deduplicate on the data frame to clean up EVTYPE.
+To answer this question we will look at Event Types that have tallied up the most in PROPDMG and CROPDMG variables -- property damage and crop damage, respectively. We also need to take into account the PROPDMGEXP and CROPDMGEXP variables so we know whether the damages are in millions or thousands. I'll first fix the damage variables, summarize the observations by EVTYPE, and then run deduplicate on the data frame to clean up EVTYPE.
 
 ```{r}
 
-# summarize by property and crop damage
-damagingevents <- tidydata %>% 
+# copying new data frame
+# if/else statements to determine damages
+# group by EVTYPE
+# summarize damages
+# arrange in descending
+damagingevents <- tidydata %>%
+  mutate(PROPDMG = ifelse(PROPDMGEXP == "M",PROPDMG * 1000000, ifelse(PROPDMGEXP == "K", PROPDMG * 1000, PROPDMG))) %>%
+    mutate(CROPDMG = ifelse(CROPDMGEXP == "M",CROPDMG * 1000000, ifelse(CROPDMGEXP == "K", CROPDMG * 1000, CROPDMG))) %>%
   group_by(EVTYPE) %>%
   summarize(totaldamage = sum(PROPDMG,CROPDMG)) %>%
   arrange(desc(totaldamage))
@@ -131,7 +162,11 @@ damagingevents <- tidydata %>%
 # deduplicate
 damagingevents$EVTYPE <- sapply(damagingevents$EVTYPE,deduplicate,damagingevents$EVTYPE)
 
+# fixing excessive heat, floods, hurricanes and thunderstorm winds
 damagingevents$EVTYPE[damagingevents$EVTYPE=="tstm wind"] <- "thunderstorm wind"
+damagingevents[grep("heat",damagingevents$EVTYPE),]$EVTYPE <- "excessive heat"
+damagingevents[grep("flood",damagingevents$EVTYPE),]$EVTYPE <- "flood"
+damagingevents[grep("hurricane",damagingevents$EVTYPE),]$EVTYPE <- "hurricane"
 
 # re-sort
 damagingevents <- damagingevents %>% 
@@ -155,3 +190,22 @@ ggplot(topfive.econ) +
   theme(axis.text.x = element_text(angle=90,vjust=1))
 
 ```
+
+As you can see, floods cause the most economic damage at an estimated $42,547,108,244. This data doesn't take into account inflation, so I recommend that the damages be summarized as "in the billions."
+
+\pagebreak
+
+# Appendix
+
+## Appendix A
+
+### Definition of Levenshtein Distance 
+
+From [Wikipedia](https://en.wikipedia.org/wiki/Levenshtein_distance): 
+
+> The Levenshtein distance is a string metric for measuring the difference between two
+> sequences. Informally, the Levenshtein distance between two words is the minimum 
+> number of single-character edits (i.e. insertions, deletions or substitutions) 
+> required to change one word into the other.
+
+R's agrep function takes a pattern, runs it against another pattern, and returns a vector containing the results.
