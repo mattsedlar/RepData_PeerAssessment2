@@ -143,18 +143,19 @@ As you can see, tornadoes are clearly the most harmful events in terms of number
 
 ### Which Events have the Greatest Economic Consequence?
 
-To answer this question we will look at Event Types that have tallied up the most in PROPDMG and CROPDMG variables -- property damage and crop damage, respectively. We also need to take into account the PROPDMGEXP and CROPDMGEXP variables so we know whether the damages are in millions or thousands. I'll first fix the damage variables, summarize the observations by EVTYPE, and then run deduplicate on the data frame to clean up EVTYPE.
+To answer this question we will look at Event Types that have tallied up the most in PROPDMG and CROPDMG variables -- property damage and crop damage, respectively. We also need to take into account the PROPDMGEXP and CROPDMGEXP variables so we know whether the damages are in billions, millions, thousands or hundreds. I'll first fix the damage variables, summarize the observations by EVTYPE, and then run deduplicate on the data frame to clean up EVTYPE.
 
 ```{r}
 
 # copying new data frame
-# if/else statements to determine damages
+# if/else statements to determine actual damages
 # group by EVTYPE
 # summarize damages
 # arrange in descending
 damagingevents <- tidydata %>%
-  mutate(PROPDMG = ifelse(PROPDMGEXP == "M",PROPDMG * 1000000, ifelse(PROPDMGEXP == "K", PROPDMG * 1000, PROPDMG))) %>%
-    mutate(CROPDMG = ifelse(CROPDMGEXP == "M",CROPDMG * 1000000, ifelse(CROPDMGEXP == "K", CROPDMG * 1000, CROPDMG))) %>%
+  mutate(PROPDMGEXP = tolower(PROPDMGEXP), CROPDMGEXP = tolower(CROPDMGEXP)) %>%
+  mutate(PROPDMG = ifelse(PROPDMGEXP == "b",PROPDMG * 1000000000, ifelse(PROPDMGEXP == "m", PROPDMG * 1000000, ifelse(PROPDMGEXP == "k", PROPDMG * 1000, ifelse(PROPDMGEXP == "h", PROPDMG * 100, PROPDMG))))) %>%
+  mutate(CROPDMG = ifelse(CROPDMGEXP == "b",CROPDMG * 1000000000, ifelse(CROPDMGEXP == "m", CROPDMG * 1000000, ifelse(CROPDMGEXP == "k", CROPDMG * 1000, ifelse(CROPDMGEXP == "h", CROPDMG * 100, CROPDMG))))) %>%
   group_by(EVTYPE) %>%
   summarize(totaldamage = sum(PROPDMG,CROPDMG)) %>%
   arrange(desc(totaldamage))
@@ -191,7 +192,7 @@ ggplot(topfive.econ) +
 
 ```
 
-As you can see, floods cause the most economic damage at an estimated $42,547,108,244. This data doesn't take into account inflation, so I recommend that the damages be summarized as "in the billions."
+As you can see, floods cause the most economic damage at an estimated $166,047,108,120. This data doesn't take into account inflation, so I recommend that the damages be summarized as "in the billions."
 
 \pagebreak
 
